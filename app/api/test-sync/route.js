@@ -8,7 +8,9 @@ export async function POST(request) {
     console.log(`Test sync: ${type} at ${timestamp} for room ${roomId}`);
 
     // Get MongoDB connection
-    const client = await import("../../lib/mongodb.js").then((m) => m.default);
+    const client = await import("../../../lib/mongodb.js").then(
+      (m) => m.default
+    );
     const db = client.db("middle-gate");
     const videoEvents = db.collection("videoEvents");
 

@@ -184,7 +184,7 @@ export default function WaitingRoom({ room, onStartMovie }) {
             </p>
             <div className="bg-white/5 rounded-xl p-4">
               <p className="text-sm text-gray-400">
-                You'll be redirected automatically when the movie starts
+                You&apos;ll be redirected automatically when the movie starts
               </p>
             </div>
           </div>

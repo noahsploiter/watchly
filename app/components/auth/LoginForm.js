@@ -117,7 +117,9 @@ export default function LoginForm({ onToggleMode }) {
 
       {/* Account Toggle */}
       <div className="text-center mt-6">
-        <span className="text-gray-600 text-sm">Don't have an account?</span>
+        <span className="text-gray-600 text-sm">
+          Don&apos;t have an account?
+        </span>
         <button
           type="button"
           onClick={onToggleMode}
