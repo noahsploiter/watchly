@@ -61,8 +61,8 @@ export default function Lobby() {
         setRooms([data.room, ...rooms]);
         setShowCreateRoom(false);
         setNewRoom({ movieTitle: "", movieUrl: "" });
-        // Redirect to the room
-        window.location.href = `/room/${data.room._id}`;
+        // Redirect to the waiting room
+        window.location.href = `/room/${data.room._id}/waiting`;
       } else {
         setError(data.error);
       }
@@ -79,7 +79,7 @@ export default function Lobby() {
     try {
       const token = localStorage.getItem("token");
       console.log("Token found:", !!token);
-      
+
       const response = await fetch(`/api/rooms/${roomId}/join`, {
         method: "POST",
         headers: {
@@ -94,9 +94,9 @@ export default function Lobby() {
       console.log("Join response data:", data);
 
       if (data.success) {
-        console.log("Join successful, redirecting to:", `/room/${roomId}`);
-        // Redirect to the room page
-        window.location.href = `/room/${roomId}`;
+        console.log("Join successful, redirecting to:", `/room/${roomId}/waiting`);
+        // Redirect to the waiting room
+        window.location.href = `/room/${roomId}/waiting`;
       } else {
         console.error("Join failed:", data.error);
         setError(data.error);
