@@ -323,27 +323,6 @@ export default function VideoPlayer({ room, isHost, onRoomUpdate }) {
     }
   };
 
-  // Test function for debugging
-  const testSync = async () => {
-    try {
-      const response = await fetch("/api/test-sync", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          roomId: room._id,
-          type: "test",
-          timestamp: 0,
-        }),
-      });
-      const data = await response.json();
-      console.log("Test sync result:", data);
-    } catch (error) {
-      console.error("Test sync error:", error);
-    }
-  };
-
   // Cleanup function to clear all intervals
   useEffect(() => {
     return () => {
@@ -508,12 +487,6 @@ export default function VideoPlayer({ room, isHost, onRoomUpdate }) {
                 <FaCrown className="w-4 h-4" />
                 <span>You are the host</span>
               </div>
-              <button
-                onClick={testSync}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-full text-sm font-medium transition-colors duration-200"
-              >
-                Test Sync
-              </button>
               <button
                 onClick={handleCancelStream}
                 className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-full text-sm font-medium flex items-center space-x-2 transition-colors duration-200"

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { AuthProvider, useAuth } from "../../contexts/AuthContext";
 import WaitingRoom from "../../components/WaitingRoom";
 import Countdown from "../../components/Countdown";
@@ -26,7 +26,7 @@ function RoomContent({ params }) {
 
   useEffect(() => {
     fetchRoom();
-  }, [roomId]);
+  }, [roomId, fetchRoom]);
 
   // Sync room state across participants
   useEffect(() => {
@@ -80,9 +80,9 @@ function RoomContent({ params }) {
     }, 1000);
 
     return () => clearInterval(syncInterval);
-  }, [roomId]); // Removed roomState from dependencies to prevent infinite loop
+  }, [roomId, roomState]); // Added roomState back but with proper handling
 
-  const fetchRoom = async () => {
+  const fetchRoom = useCallback(async () => {
     if (!roomId) return;
 
     try {
@@ -112,7 +112,7 @@ function RoomContent({ params }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [roomId]);
 
   const handleStartMovie = async () => {
     console.log("Host starting movie - setting state to countdown");
@@ -210,8 +210,8 @@ function RoomContent({ params }) {
               Stream Ended
             </h2>
             <p className="text-gray-300 mb-4">
-              The host has ended this stream. You'll be redirected to the lobby
-              shortly.
+              The host has ended this stream. You&apos;ll be redirected to the
+              lobby shortly.
             </p>
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-400 mx-auto"></div>
           </div>
