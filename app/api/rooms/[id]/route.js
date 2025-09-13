@@ -5,6 +5,14 @@ export async function GET(request, { params }) {
   try {
     const { id: roomId } = await params;
 
+    // Validate roomId
+    if (!roomId) {
+      return NextResponse.json(
+        { error: "Room ID is required" },
+        { status: 400 }
+      );
+    }
+
     const room = await findRoomById(roomId);
 
     if (!room) {
@@ -29,6 +37,18 @@ export async function GET(request, { params }) {
     });
   } catch (error) {
     console.error("Error fetching room:", error);
+
+    // Check if it's a MongoDB connection error
+    if (error.message && error.message.includes("MongoDB")) {
+      return NextResponse.json(
+        {
+          error:
+            "Database connection error. Please check MONGODB_URI environment variable.",
+        },
+        { status: 500 }
+      );
+    }
+
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }

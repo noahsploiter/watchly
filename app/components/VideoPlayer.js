@@ -301,6 +301,11 @@ export default function VideoPlayer({ room, isHost, onRoomUpdate }) {
   };
 
   const broadcastEvent = async (event) => {
+    if (!room || !room._id) {
+      console.error("Cannot broadcast event: room not initialized");
+      return;
+    }
+
     console.log("broadcastEvent called with:", event);
     try {
       const response = await fetch(`/api/rooms/${room._id}/sync`, {

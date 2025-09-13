@@ -87,6 +87,19 @@ function RoomContent({ params }) {
 
     try {
       const response = await fetch(`/api/rooms/${roomId}`);
+
+      if (!response.ok) {
+        if (response.status === 500) {
+          setError(
+            "Server error. Please check your environment variables (MONGODB_URI, JWT_SECRET)"
+          );
+          return;
+        }
+        const errorData = await response.json();
+        setError(errorData.error || "Failed to load room");
+        return;
+      }
+
       const data = await response.json();
 
       if (data.success) {
