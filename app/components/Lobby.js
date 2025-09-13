@@ -75,8 +75,11 @@ export default function Lobby() {
   };
 
   const handleJoinRoom = async (roomId) => {
+    console.log("Attempting to join room:", roomId);
     try {
       const token = localStorage.getItem("token");
+      console.log("Token found:", !!token);
+      
       const response = await fetch(`/api/rooms/${roomId}/join`, {
         method: "POST",
         headers: {
@@ -84,12 +87,18 @@ export default function Lobby() {
         },
       });
 
+      console.log("Join response status:", response.status);
+      console.log("Join response ok:", response.ok);
+
       const data = await response.json();
+      console.log("Join response data:", data);
 
       if (data.success) {
+        console.log("Join successful, redirecting to:", `/room/${roomId}`);
         // Redirect to the room page
         window.location.href = `/room/${roomId}`;
       } else {
+        console.error("Join failed:", data.error);
         setError(data.error);
       }
     } catch (error) {
