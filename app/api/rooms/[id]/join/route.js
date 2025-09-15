@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { joinRoom } from "../../../../../lib/room";
+import { publishToRoom } from "../../../../../lib/sseHub";
 import jwt from "jsonwebtoken";
 
 export async function POST(request, { params }) {
@@ -25,6 +26,14 @@ export async function POST(request, { params }) {
 
     // Join room
     const room = await joinRoom(roomId, decoded.userId, decoded.username);
+    // Broadcast participants update
+    publishToRoom(roomId, {
+      type: "participants",
+      roomState: room.roomState,
+      participants: room.participants || [],
+      isActive: room.isActive,
+      ts: Date.now(),
+    });
 
     return NextResponse.json(
       {

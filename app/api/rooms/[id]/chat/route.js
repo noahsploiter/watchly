@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { findRoomById } from "../../../../../lib/room";
+import { publishToRoom } from "../../../../../lib/sseHub";
 import jwt from "jsonwebtoken";
 
 // GET - Fetch chat messages for a room
@@ -96,15 +97,20 @@ export async function POST(request, { params }) {
 
     const result = await chatMessages.insertOne(newMessage);
 
+    const payload = {
+      id: result.insertedId.toString(),
+      username: newMessage.username,
+      message: newMessage.message,
+      timestamp: newMessage.timestamp,
+      isHost: newMessage.isHost,
+    };
+
+    // Realtime broadcast
+    publishToRoom(roomId, { type: "chat", message: payload, ts: Date.now() });
+
     return NextResponse.json({
       success: true,
-      message: {
-        id: result.insertedId.toString(),
-        username: newMessage.username,
-        message: newMessage.message,
-        timestamp: newMessage.timestamp,
-        isHost: newMessage.isHost,
-      },
+      message: payload,
     });
   } catch (error) {
     console.error("Error sending chat message:", error);

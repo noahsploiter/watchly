@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { useAuth } from "../contexts/AuthContext";
 import { FaPlay, FaCopy, FaCheck, FaUsers, FaTimes } from "react-icons/fa";
 
@@ -9,27 +10,46 @@ export default function WaitingRoom({ room, onStartMovie }) {
   const [participants, setParticipants] = useState(room.participants || []);
   const [roomLink, setRoomLink] = useState("");
   const [copied, setCopied] = useState(false);
+  const router = useRouter();
 
   useEffect(() => {
     // Generate room link
     const link = `${window.location.origin}/room/${room._id}`;
     setRoomLink(link);
 
-    // Poll for participant updates
-    const interval = setInterval(async () => {
-      try {
-        const response = await fetch(`/api/rooms/${room._id}`);
-        const data = await response.json();
-        if (data.success) {
-          setParticipants(data.room.participants || []);
-        }
-      } catch (error) {
-        console.error("Error fetching room updates:", error);
-      }
-    }, 2000);
+    // Subscribe to SSE for realtime updates
+    const es = new EventSource(`/api/rooms/${room._id}/events`);
 
-    return () => clearInterval(interval);
-  }, [room._id]);
+    const handleMessage = (evt) => {
+      try {
+        const payload = JSON.parse(evt.data);
+        if (payload.participants) {
+          setParticipants(payload.participants);
+        }
+        const state = payload.roomState || "waiting";
+        if (state === "countdown") {
+          router.push(`/room/${room._id}/countdown`);
+        } else if (state === "playing") {
+          router.push(`/room/${room._id}/player`);
+        } else if (payload.isActive === false || state === "ended") {
+          router.push("/");
+        }
+      } catch (e) {
+        // ignore malformed
+      }
+    };
+
+    es.onmessage = handleMessage;
+    es.addEventListener("snapshot", handleMessage);
+
+    es.onerror = () => {
+      // Auto-reconnect will happen; optional logging
+    };
+
+    return () => {
+      es.close();
+    };
+  }, [room._id, router]);
 
   const copyRoomLink = async () => {
     try {

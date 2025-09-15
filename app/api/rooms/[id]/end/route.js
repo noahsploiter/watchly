@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { endRoom } from "../../../../../lib/room";
+import { publishToRoom } from "../../../../../lib/sseHub";
 import jwt from "jsonwebtoken";
 
 export async function POST(request, { params }) {
@@ -29,6 +30,13 @@ export async function POST(request, { params }) {
 
     // Then end the room (mark as inactive)
     const room = await endRoom(roomId, decoded.userId);
+    publishToRoom(roomId, {
+      type: "ended",
+      roomState: room.roomState,
+      participants: room.participants || [],
+      isActive: room.isActive,
+      ts: Date.now(),
+    });
 
     return NextResponse.json({
       success: true,

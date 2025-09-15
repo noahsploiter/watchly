@@ -47,141 +47,134 @@ export default function VideoPlayer({ room, isHost, onRoomUpdate }) {
   const [showReactions, setShowReactions] = useState(false);
   const [videoError, setVideoError] = useState("");
 
-  // Sync with server state and video events
+  // Subscribe to SSE: participants/state/chat/reactions/playback
   useEffect(() => {
-    const syncInterval = setInterval(async () => {
+    const es = new EventSource(`/api/rooms/${room._id}/events`);
+
+    const handleMessage = async (evt) => {
       try {
-        const response = await fetch(`/api/rooms/${room._id}`);
-        const data = await response.json();
-        if (data.success) {
-          setParticipants(data.room.participants || []);
+        const payload = JSON.parse(evt.data);
+        if (payload.participants) {
+          setParticipants(payload.participants || []);
         }
-      } catch (error) {
-        console.error("Error syncing room:", error);
-      }
-    }, 1000);
+        const state = payload.roomState || "waiting";
+        if (state === "ended" || payload.isActive === false) {
+          window.location.href = "/";
+          return;
+        }
+        // Chat messages
+        if (payload.type === "chat" && payload.message) {
+          setChatMessages((prev) => [...prev, payload.message]);
+          setTimeout(() => {
+            if (chatRef.current) {
+              chatRef.current.scrollTop = chatRef.current.scrollHeight;
+            }
+          }, 50);
+        }
+        // Reactions
+        if (payload.type === "reaction" && payload.reaction) {
+          const r = payload.reaction;
+          setReactions((prev) => {
+            const next = { ...prev };
+            const list = Array.isArray(next[r.type]) ? next[r.type] : [];
+            const updated = [
+              ...list,
+              { id: r.id, username: r.username, timestamp: r.timestamp },
+            ];
+            const now = Date.now();
+            next[r.type] = updated
+              .filter((x) => now - new Date(x.timestamp).getTime() <= 3000)
+              .slice(-5);
+            return next;
+          });
+        }
+        // Playback sync (participants only)
+        if (!isHost && payload.type === "playback" && payload.event) {
+          const video = videoRef.current;
+          if (!video) return;
+          const e = payload.event;
+          if (e.type === "play") {
+            if (video.paused) {
+              await video.play();
+              setIsPlaying(true);
+            }
+          } else if (e.type === "pause") {
+            if (!video.paused) {
+              video.pause();
+              setIsPlaying(false);
+            }
+          } else if (e.type === "seek") {
+            const desired = Number(e.videoTime) || 0;
+            if (Math.abs(video.currentTime - desired) > 0.3) {
+              video.currentTime = desired;
+              setCurrentTime(desired);
+            }
+          }
+        }
+      } catch (_) {}
+    };
 
-    return () => clearInterval(syncInterval);
-  }, [room._id]);
+    es.onmessage = handleMessage;
+    es.addEventListener("snapshot", handleMessage);
+    es.onerror = () => {};
+    return () => es.close();
+  }, [room._id, isHost]);
 
-  // Sync chat messages
+  // Chat: initial load only; realtime via SSE
   useEffect(() => {
-    const fetchChatMessages = async () => {
+    const load = async () => {
       try {
         const response = await fetch(`/api/rooms/${room._id}/chat`);
-        if (!response.ok) {
-          console.error("Failed to fetch chat messages:", response.status);
-          return;
-        }
+        if (!response.ok) return;
         const data = await response.json();
-        if (data.success) {
-          setChatMessages(data.messages);
-        }
-      } catch (error) {
-        console.error("Error fetching chat messages:", error);
-        // Don't retry on network errors to prevent resource exhaustion
-        if (
-          error.name === "TypeError" &&
-          error.message.includes("Failed to fetch")
-        ) {
-          console.log("Network error, stopping chat polling");
-          return;
-        }
-      }
+        if (data.success) setChatMessages(data.messages);
+      } catch {}
     };
-
-    // Fetch initial messages
-    fetchChatMessages();
-
-    // Poll for new messages every 1 second for real-time feel
-    const chatInterval = setInterval(fetchChatMessages, 3000);
-    return () => clearInterval(chatInterval);
+    load();
   }, [room._id]);
 
-  // Sync reactions
+  // Reactions: initial load only; realtime via SSE
   useEffect(() => {
-    const fetchReactions = async () => {
+    const load = async () => {
       try {
         const response = await fetch(`/api/rooms/${room._id}/reactions`);
-        if (!response.ok) {
-          console.error("Failed to fetch reactions:", response.status);
-          return;
-        }
+        if (!response.ok) return;
         const data = await response.json();
         if (data.success) {
-          setReactions(data.reactions);
+          const now = Date.now();
+          const recent = {};
+          Object.entries(data.reactions || {}).forEach(([type, list]) => {
+            const pruned = (list || []).filter(
+              (r) => now - new Date(r.timestamp).getTime() <= 3000
+            );
+            if (pruned.length) recent[type] = pruned.slice(-5);
+          });
+          setReactions(recent);
         }
-      } catch (error) {
-        console.error("Error fetching reactions:", error);
-        // Don't retry on network errors to prevent resource exhaustion
-        if (
-          error.name === "TypeError" &&
-          error.message.includes("Failed to fetch")
-        ) {
-          console.log("Network error, stopping reaction polling");
-          return;
-        }
-      }
+      } catch {}
     };
-
-    // Fetch initial reactions
-    fetchReactions();
-
-    // Poll for new reactions every 1 second for real-time feel
-    const reactionsInterval = setInterval(fetchReactions, 3000);
-    return () => clearInterval(reactionsInterval);
+    load();
   }, [room._id]);
 
-  // Listen for video sync events (for participants)
+  // Local cleanup to expire overlay reactions quickly (every 500ms)
   useEffect(() => {
-    if (isHost) return; // Host doesn't need to listen for sync events
+    const iv = setInterval(() => {
+      const now = Date.now();
+      let changed = false;
+      const next = {};
+      Object.entries(reactions || {}).forEach(([type, list]) => {
+        const kept = (list || []).filter(
+          (r) => now - new Date(r.timestamp).getTime() <= 2500
+        );
+        if (kept.length) next[type] = kept;
+        if (!list || kept.length !== list.length) changed = true;
+      });
+      if (changed) setReactions(next);
+    }, 500);
+    return () => clearInterval(iv);
+  }, [reactions]);
 
-    let lastProcessedAtMs = 0;
-
-    const syncVideoEvents = async () => {
-      try {
-        const response = await fetch(`/api/rooms/${room._id}/sync-events`);
-        const data = await response.json();
-        if (!data.success || !data.events || data.events.length === 0) return;
-
-        const video = videoRef.current;
-        if (!video) return;
-
-        // Convert timestamps to ms and pick newest event strictly newer than lastProcessedAtMs
-        const newest = data.events
-          .map((e) => ({ ...e, tsMs: new Date(e.timestamp).getTime() }))
-          .sort((a, b) => b.tsMs - a.tsMs)
-          .find((e) => e.tsMs > lastProcessedAtMs);
-
-        if (!newest) return;
-        lastProcessedAtMs = newest.tsMs;
-
-        // Apply latest event
-        if (newest.type === "play") {
-          if (video.paused) {
-            await video.play();
-            setIsPlaying(true);
-          }
-        } else if (newest.type === "pause") {
-          if (!video.paused) {
-            video.pause();
-            setIsPlaying(false);
-          }
-        } else if (newest.type === "seek") {
-          const desired = Number(newest.videoTime) || 0;
-          if (Math.abs(video.currentTime - desired) > 0.3) {
-            video.currentTime = desired;
-            setCurrentTime(desired);
-          }
-        }
-      } catch (error) {
-        console.error("Error syncing video events:", error);
-      }
-    };
-
-    const videoSyncInterval = setInterval(syncVideoEvents, 1000);
-    return () => clearInterval(videoSyncInterval);
-  }, [room._id, isHost]);
+  // Remove polling sync-events; playback is handled via SSE above
 
   // Video event handlers
   useEffect(() => {
@@ -584,41 +577,40 @@ export default function VideoPlayer({ room, isHost, onRoomUpdate }) {
           {/* Video Controls Overlay */}
           {showControls && (
             <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent p-4">
-              {/* Progress Bar */}
-              <div className="mb-4">
-                <div className="flex items-center space-x-3 text-white text-sm mb-2">
-                  <span className="font-mono">{formatTime(currentTime)}</span>
-                  <div className="flex-1 bg-white/20 rounded-full h-1.5">
-                    <div
-                      className="bg-gradient-to-r from-purple-500 to-pink-500 h-1.5 rounded-full transition-all duration-200"
-                      style={{ width: `${(currentTime / duration) * 100}%` }}
-                    ></div>
-                  </div>
-                  <span className="font-mono">{formatTime(duration)}</span>
-                </div>
-
-                {/* Seek Bar - Only for Host */}
-                {isHost && (
+              {/* Unified Progress/Seek Bar */}
+              <div className="mb-3">
+                <div className="flex items-center gap-3 text-white text-xs sm:text-sm mb-2">
+                  <span className="font-mono opacity-80 min-w-[40px] text-right">
+                    {formatTime(currentTime)}
+                  </span>
                   <input
                     type="range"
                     min="0"
-                    max={duration}
+                    max={Math.max(duration, 0.01)}
                     value={currentTime}
-                    onChange={(e) => handleSeek(parseFloat(e.target.value))}
-                    className="w-full h-1 bg-transparent cursor-pointer appearance-none"
+                    onChange={(e) =>
+                      isHost && handleSeek(parseFloat(e.target.value))
+                    }
+                    disabled={!isHost}
+                    className={`flex-1 h-1 cursor-pointer appearance-none bg-transparent ${
+                      !isHost ? "opacity-60 cursor-default" : ""
+                    }`}
                     style={{
                       background: `linear-gradient(to right, #8b5cf6 0%, #8b5cf6 ${
-                        (currentTime / duration) * 100
+                        duration ? (currentTime / duration) * 100 : 0
                       }%, rgba(255,255,255,0.2) ${
-                        (currentTime / duration) * 100
+                        duration ? (currentTime / duration) * 100 : 0
                       }%, rgba(255,255,255,0.2) 100%)`,
                     }}
                   />
-                )}
+                  <span className="font-mono opacity-80 min-w-[40px]">
+                    {formatTime(duration)}
+                  </span>
+                </div>
               </div>
 
               {/* Control Buttons */}
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center space-x-3">
                   {/* Play/Pause Button - Only for Host */}
                   {isHost && (
@@ -640,7 +632,7 @@ export default function VideoPlayer({ room, isHost, onRoomUpdate }) {
                   )}
 
                   {/* Volume Control - Available for all users */}
-                  <div className="flex items-center space-x-2">
+                  <div className="hidden sm:flex items-center space-x-2">
                     <button
                       onClick={handleMute}
                       className="w-10 h-10 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center transition-all duration-200"
@@ -665,22 +657,10 @@ export default function VideoPlayer({ room, isHost, onRoomUpdate }) {
                   </div>
                 </div>
 
-                {/* Participants */}
-                <div className="flex items-center space-x-2">
-                  <span className="text-white text-sm">Viewers:</span>
-                  {participants.map((participant) => (
-                    <div
-                      key={participant.userId}
-                      className="w-8 h-8 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full flex items-center justify-center relative"
-                    >
-                      <span className="text-white text-xs font-semibold">
-                        {participant.username.charAt(0).toUpperCase()}
-                      </span>
-                      {participant.userId === room.hostId && (
-                        <FaCrown className="absolute -top-1 -right-1 w-3 h-3 text-yellow-400" />
-                      )}
-                    </div>
-                  ))}
+                {/* Viewer count only (cleaner UI) */}
+                <div className="hidden sm:flex items-center space-x-2 text-white/80 text-xs sm:text-sm">
+                  <span>Viewers:</span>
+                  <span className="font-medium">{participants.length}</span>
                 </div>
 
                 {/* Right Controls */}
@@ -716,6 +696,7 @@ export default function VideoPlayer({ room, isHost, onRoomUpdate }) {
                   <button
                     onClick={() => setShowChat(!showChat)}
                     className="w-10 h-10 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center transition-all duration-200"
+                    aria-label="Toggle chat"
                   >
                     <FaComments className="w-4 h-4 text-white" />
                   </button>
@@ -735,64 +716,63 @@ export default function VideoPlayer({ room, isHost, onRoomUpdate }) {
 
         {/* Chat Section */}
         {showChat && (
-          <div className="flex-1 bg-gray-800 flex flex-col">
+          <div className="flex-1 bg-gray-900/60 backdrop-blur-sm border-l border-white/10 flex flex-col">
             {/* Chat Header */}
-            <div className="bg-gray-700 px-4 py-3 border-b border-gray-600">
+            <div className="px-4 py-3">
               <div className="flex items-center justify-between">
-                <h3 className="text-white font-semibold flex items-center space-x-2">
-                  <FaComments className="w-4 h-4" />
+                <h3 className="text-white font-medium flex items-center gap-2">
+                  <FaComments className="w-4 h-4 text-purple-300" />
                   <span>Chat</span>
                 </h3>
-                <span className="text-gray-300 text-sm">
+                <span className="text-gray-400 text-xs">
                   {participants.length} viewers
                 </span>
               </div>
             </div>
 
             {/* Chat Messages */}
-            <div ref={chatRef} className="flex-1 overflow-y-auto p-4 space-y-3">
+            <div
+              ref={chatRef}
+              className="flex-1 overflow-y-auto px-4 pb-4 space-y-4"
+            >
               {chatMessages.length === 0 ? (
-                <div className="text-center text-gray-400 py-8">
-                  <FaComments className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                  <p>No messages yet. Start the conversation!</p>
+                <div className="text-center text-gray-500 py-10">
+                  <FaComments className="w-7 h-7 mx-auto mb-3 opacity-40" />
+                  <p className="text-sm">Say hello to start the conversation</p>
                 </div>
               ) : (
                 chatMessages.map((message) => (
-                  <div key={message.id} className="flex items-start space-x-3">
-                    <div
-                      className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                        message.isHost
-                          ? "bg-gradient-to-r from-purple-500 to-pink-500"
-                          : "bg-gray-600"
-                      }`}
-                    >
-                      {message.isHost ? (
-                        <FaCrown className="w-4 h-4 text-white" />
-                      ) : (
-                        <FaUser className="w-4 h-4 text-white" />
-                      )}
-                    </div>
+                  <div key={message.id} className="flex items-end gap-2">
                     <div className="flex-1">
-                      <div className="flex items-center space-x-2">
+                      <div className="flex items-center gap-2 mb-1">
                         <span
-                          className={`font-semibold text-sm ${
-                            message.isHost ? "text-purple-400" : "text-white"
+                          className={`text-xs font-medium ${
+                            message.isHost ? "text-purple-300" : "text-gray-300"
                           }`}
                         >
                           {message.username}
                         </span>
                         {message.isHost && (
-                          <span className="text-xs bg-purple-600 text-white px-2 py-0.5 rounded">
+                          <span className="text-[10px] bg-purple-600/30 text-purple-200 px-1.5 py-0.5 rounded">
                             HOST
                           </span>
                         )}
-                        <span className="text-xs text-gray-400">
-                          {new Date(message.timestamp).toLocaleTimeString()}
+                        <span className="text-[10px] text-gray-500">
+                          {new Date(message.timestamp).toLocaleTimeString([], {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
                         </span>
                       </div>
-                      <p className="text-gray-200 text-sm mt-1">
+                      <div
+                        className={`inline-block max-w-[85%] text-sm px-3 py-2 rounded-2xl ${
+                          message.isHost
+                            ? "bg-purple-600/20 text-gray-200"
+                            : "bg-white/10 text-gray-200"
+                        }`}
+                      >
                         {message.message}
-                      </p>
+                      </div>
                     </div>
                   </div>
                 ))
@@ -800,26 +780,26 @@ export default function VideoPlayer({ room, isHost, onRoomUpdate }) {
             </div>
 
             {/* Chat Input */}
-            <div className="bg-gray-700 p-4 border-t border-gray-600">
-              <div className="flex space-x-2">
+            <div className="p-3 border-t border-white/10">
+              <div className="flex items-center gap-2">
                 <input
                   type="text"
                   value={newMessage}
                   onChange={(e) => setNewMessage(e.target.value)}
                   onKeyPress={handleKeyPress}
-                  placeholder="Type a message..."
-                  className="flex-1 bg-gray-600 text-white px-4 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  placeholder="Type a message"
+                  className="flex-1 bg-white/5 text-white placeholder-gray-400 px-4 py-2.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500/60 border border-white/10"
                 />
                 <button
                   onClick={sendMessage}
                   disabled={sending}
-                  className={`bg-purple-600 text-white px-6 py-2 rounded-lg transition-colors duration-200 ${
+                  className={`px-4 py-2.5 rounded-xl text-sm font-medium transition-colors ${
                     sending
-                      ? "opacity-60 cursor-not-allowed"
-                      : "hover:bg-purple-700"
+                      ? "bg-purple-600/60 text-white cursor-not-allowed"
+                      : "bg-purple-600 hover:bg-purple-700 text-white"
                   }`}
                 >
-                  {sending ? "Sending..." : "Send"}
+                  {sending ? "Sending…" : "Send"}
                 </button>
               </div>
             </div>

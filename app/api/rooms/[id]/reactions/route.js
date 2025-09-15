@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { findRoomById } from "../../../../../lib/room";
+import { publishToRoom } from "../../../../../lib/sseHub";
 import jwt from "jsonwebtoken";
 
 // GET - Fetch reactions for a room
@@ -103,14 +104,23 @@ export async function POST(request, { params }) {
 
     const result = await reactions.insertOne(newReaction);
 
+    const payload = {
+      id: result.insertedId.toString(),
+      username: newReaction.username,
+      type: newReaction.type,
+      timestamp: newReaction.timestamp,
+    };
+
+    // Realtime broadcast
+    publishToRoom(roomId, {
+      type: "reaction",
+      reaction: payload,
+      ts: Date.now(),
+    });
+
     return NextResponse.json({
       success: true,
-      reaction: {
-        id: result.insertedId.toString(),
-        username: newReaction.username,
-        type: newReaction.type,
-        timestamp: newReaction.timestamp,
-      },
+      reaction: payload,
     });
   } catch (error) {
     console.error("Error adding reaction:", error);

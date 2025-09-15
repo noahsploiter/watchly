@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { updateRoomState } from "../../../../../lib/room";
+import { publishToRoom } from "../../../../../lib/sseHub";
 import jwt from "jsonwebtoken";
 
 export async function POST(request, { params }) {
@@ -34,6 +35,14 @@ export async function POST(request, { params }) {
     }
 
     const room = await updateRoomState(roomId, roomState, decoded.userId);
+    // Broadcast to room subscribers
+    publishToRoom(roomId, {
+      type: "roomState",
+      roomState: room.roomState,
+      participants: room.participants || [],
+      isActive: room.isActive,
+      ts: Date.now(),
+    });
 
     return NextResponse.json({
       success: true,

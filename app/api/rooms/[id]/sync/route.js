@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { findRoomById } from "../../../../../lib/room";
+import { publishToRoom } from "../../../../../lib/sseHub";
 import jwt from "jsonwebtoken";
 
 export async function POST(request, { params }) {
@@ -55,6 +56,12 @@ export async function POST(request, { params }) {
     console.log(
       `Broadcasting ${type} event at ${timestamp} for room ${roomId}`
     );
+
+    // Broadcast playback event to participants
+    publishToRoom(roomId, {
+      type: "playback",
+      event: { type, videoTime: timestamp, timestamp: Date.now() },
+    });
 
     return NextResponse.json({
       success: true,
