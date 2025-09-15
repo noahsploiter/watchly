@@ -22,19 +22,17 @@ function WaitingRoomContent({ params }) {
     getRoomId();
   }, [params]);
 
-  useEffect(() => {
-    fetchRoom();
-  }, [roomId, fetchRoom]);
-
   const fetchRoom = useCallback(async () => {
     if (!roomId) return;
 
     try {
       const response = await fetch(`/api/rooms/${roomId}`);
-      
+
       if (!response.ok) {
         if (response.status === 500) {
-          setError("Server error. Please check your environment variables (MONGODB_URI, JWT_SECRET)");
+          setError(
+            "Server error. Please check your environment variables (MONGODB_URI, JWT_SECRET)"
+          );
           return;
         }
         const errorData = await response.json();
@@ -69,6 +67,10 @@ function WaitingRoomContent({ params }) {
     }
   }, [roomId, router]);
 
+  useEffect(() => {
+    fetchRoom();
+  }, [roomId, fetchRoom]);
+
   const handleStartMovie = async () => {
     console.log("Host starting movie - setting state to countdown");
     // Update room state in database
@@ -83,7 +85,7 @@ function WaitingRoomContent({ params }) {
       });
       const data = await response.json();
       console.log("Room state update response:", data);
-      
+
       if (data.success) {
         router.push(`/room/${roomId}/countdown`);
       }

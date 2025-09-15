@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { FaSignOutAlt, FaUser, FaPlus, FaPlay, FaUsers } from "react-icons/fa";
+import { FaTrash } from "react-icons/fa";
 
 export default function Lobby() {
   const { user, logout } = useAuth();
@@ -94,7 +95,10 @@ export default function Lobby() {
       console.log("Join response data:", data);
 
       if (data.success) {
-        console.log("Join successful, redirecting to:", `/room/${roomId}/waiting`);
+        console.log(
+          "Join successful, redirecting to:",
+          `/room/${roomId}/waiting`
+        );
         // Redirect to the waiting room
         window.location.href = `/room/${roomId}/waiting`;
       } else {
@@ -104,6 +108,31 @@ export default function Lobby() {
     } catch (error) {
       console.error("Error joining room:", error);
       setError("Failed to join room");
+    }
+  };
+
+  const handleDeleteRoom = async (roomId, hostId) => {
+    if (user?.userId !== hostId) return;
+    if (!confirm("Delete this watch party? This cannot be undone.")) return;
+
+    try {
+      const token = localStorage.getItem("token");
+      const response = await fetch(`/api/rooms/${roomId}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const data = await response.json();
+      if (response.ok && data.success) {
+        setRooms((prev) => prev.filter((r) => r._id !== roomId));
+      } else {
+        setError(data.error || "Failed to delete room");
+      }
+    } catch (error) {
+      console.error("Error deleting room:", error);
+      setError("Failed to delete room");
     }
   };
 
@@ -266,11 +295,25 @@ export default function Lobby() {
                           </p>
                         </div>
                       </div>
-                      <div className="flex items-center space-x-1 text-gray-300">
-                        <FaUsers className="w-4 h-4" />
-                        <span className="text-sm">
-                          {room.participants?.length || 0}
-                        </span>
+                      <div className="flex items-center space-x-2 text-gray-300">
+                        <div className="flex items-center space-x-1">
+                          <FaUsers className="w-4 h-4" />
+                          <span className="text-sm">
+                            {room.participants?.length || 0}
+                          </span>
+                        </div>
+                        {user?.userId === room.hostId && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteRoom(room._id, room.hostId);
+                            }}
+                            title="Delete room"
+                            className="w-8 h-8 rounded-full bg-red-600/20 hover:bg-red-600/30 text-red-300 flex items-center justify-center"
+                          >
+                            <FaTrash className="w-3 h-3" />
+                          </button>
+                        )}
                       </div>
                     </div>
                     <div className="flex items-center justify-between">

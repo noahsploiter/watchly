@@ -21,19 +21,17 @@ function PlayerRoomContent({ params }) {
     getRoomId();
   }, [params]);
 
-  useEffect(() => {
-    fetchRoom();
-  }, [roomId, fetchRoom]);
-
   const fetchRoom = useCallback(async () => {
     if (!roomId) return;
 
     try {
       const response = await fetch(`/api/rooms/${roomId}`);
-      
+
       if (!response.ok) {
         if (response.status === 500) {
-          setError("Server error. Please check your environment variables (MONGODB_URI, JWT_SECRET)");
+          setError(
+            "Server error. Please check your environment variables (MONGODB_URI, JWT_SECRET)"
+          );
           return;
         }
         const errorData = await response.json();
@@ -66,6 +64,10 @@ function PlayerRoomContent({ params }) {
       setLoading(false);
     }
   }, [roomId, router]);
+
+  useEffect(() => {
+    fetchRoom();
+  }, [roomId, fetchRoom]);
 
   if (loading) {
     return (

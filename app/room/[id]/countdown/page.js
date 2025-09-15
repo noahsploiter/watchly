@@ -22,19 +22,17 @@ function CountdownRoomContent({ params }) {
     getRoomId();
   }, [params]);
 
-  useEffect(() => {
-    fetchRoom();
-  }, [roomId, fetchRoom]);
-
   const fetchRoom = useCallback(async () => {
     if (!roomId) return;
 
     try {
       const response = await fetch(`/api/rooms/${roomId}`);
-      
+
       if (!response.ok) {
         if (response.status === 500) {
-          setError("Server error. Please check your environment variables (MONGODB_URI, JWT_SECRET)");
+          setError(
+            "Server error. Please check your environment variables (MONGODB_URI, JWT_SECRET)"
+          );
           return;
         }
         const errorData = await response.json();
@@ -69,6 +67,10 @@ function CountdownRoomContent({ params }) {
     }
   }, [roomId, router]);
 
+  useEffect(() => {
+    fetchRoom();
+  }, [roomId, fetchRoom]);
+
   const handleCountdownComplete = async () => {
     console.log("Countdown complete - setting state to playing");
     // Update room state in database
@@ -83,7 +85,7 @@ function CountdownRoomContent({ params }) {
       });
       const data = await response.json();
       console.log("Room state update response:", data);
-      
+
       if (data.success) {
         router.push(`/room/${roomId}/player`);
       }
@@ -133,7 +135,12 @@ function CountdownRoomContent({ params }) {
     );
   }
 
-  return <Countdown participants={participants} onCountdownComplete={handleCountdownComplete} />;
+  return (
+    <Countdown
+      participants={participants}
+      onCountdownComplete={handleCountdownComplete}
+    />
+  );
 }
 
 export default function CountdownRoomPage({ params }) {
