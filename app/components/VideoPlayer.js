@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
+import Link from "next/link";
 import { useAuth } from "../contexts/AuthContext";
 import {
   FaPlay,
@@ -517,12 +518,12 @@ export default function VideoPlayer({ room, isHost, onRoomUpdate }) {
                 </h2>
                 <p className="text-gray-300 mb-6">{videoError}</p>
                 <div className="flex items-center justify-center gap-3">
-                  <a
+                  <Link
                     href="/"
                     className="bg-purple-600 hover:bg-purple-700 text-white px-5 py-2 rounded-lg transition-colors"
                   >
                     Back to Lobby
-                  </a>
+                  </Link>
                   {isHost && (
                     <button
                       onClick={handleCancelStream}
