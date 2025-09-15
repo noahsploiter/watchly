@@ -44,6 +44,7 @@ export default function VideoPlayer({ room, isHost, onRoomUpdate }) {
   const [newMessage, setNewMessage] = useState("");
   const [reactions, setReactions] = useState({});
   const [showReactions, setShowReactions] = useState(false);
+  const [videoError, setVideoError] = useState("");
 
   // Sync with server state and video events
   useEffect(() => {
@@ -134,45 +135,42 @@ export default function VideoPlayer({ room, isHost, onRoomUpdate }) {
   useEffect(() => {
     if (isHost) return; // Host doesn't need to listen for sync events
 
-    let lastProcessedEvent = null;
+    let lastProcessedAtMs = 0;
 
     const syncVideoEvents = async () => {
       try {
         const response = await fetch(`/api/rooms/${room._id}/sync-events`);
         const data = await response.json();
-        if (data.success && data.events && data.events.length > 0) {
-          const video = videoRef.current;
-          if (!video) return;
+        if (!data.success || !data.events || data.events.length === 0) return;
 
-          // Process only new events
-          const newEvents = data.events.filter(
-            (event) =>
-              !lastProcessedEvent || event.timestamp > lastProcessedEvent
-          );
+        const video = videoRef.current;
+        if (!video) return;
 
-          if (newEvents.length > 0) {
-            lastProcessedEvent = newEvents[0].timestamp;
+        // Convert timestamps to ms and pick newest event strictly newer than lastProcessedAtMs
+        const newest = data.events
+          .map((e) => ({ ...e, tsMs: new Date(e.timestamp).getTime() }))
+          .sort((a, b) => b.tsMs - a.tsMs)
+          .find((e) => e.tsMs > lastProcessedAtMs);
 
-            // Process the most recent event
-            const latestEvent = newEvents[0];
-            console.log("Processing video event:", latestEvent);
+        if (!newest) return;
+        lastProcessedAtMs = newest.tsMs;
 
-            if (latestEvent.type === "play" && video.paused) {
-              await video.play();
-              setIsPlaying(true);
-            } else if (latestEvent.type === "pause" && !video.paused) {
-              video.pause();
-              setIsPlaying(false);
-            } else if (latestEvent.type === "seek") {
-              const timeDiff = Math.abs(
-                video.currentTime - latestEvent.videoTime
-              );
-              if (timeDiff > 1) {
-                // Only seek if difference is more than 1 second
-                video.currentTime = latestEvent.videoTime;
-                setCurrentTime(latestEvent.videoTime);
-              }
-            }
+        // Apply latest event
+        if (newest.type === "play") {
+          if (video.paused) {
+            await video.play();
+            setIsPlaying(true);
+          }
+        } else if (newest.type === "pause") {
+          if (!video.paused) {
+            video.pause();
+            setIsPlaying(false);
+          }
+        } else if (newest.type === "seek") {
+          const desired = Number(newest.videoTime) || 0;
+          if (Math.abs(video.currentTime - desired) > 0.3) {
+            video.currentTime = desired;
+            setCurrentTime(desired);
           }
         }
       } catch (error) {
@@ -180,8 +178,7 @@ export default function VideoPlayer({ room, isHost, onRoomUpdate }) {
       }
     };
 
-    // Check for video events every 2 seconds to prevent resource exhaustion
-    const videoSyncInterval = setInterval(syncVideoEvents, 2000);
+    const videoSyncInterval = setInterval(syncVideoEvents, 1000);
     return () => clearInterval(videoSyncInterval);
   }, [room._id, isHost]);
 
@@ -336,10 +333,13 @@ export default function VideoPlayer({ room, isHost, onRoomUpdate }) {
   }, []);
 
   // Chat functions
+  const [sending, setSending] = useState(false);
+
   const sendMessage = async () => {
-    if (!newMessage.trim()) return;
+    if (!newMessage.trim() || sending) return;
 
     try {
+      setSending(true);
       const response = await fetch(`/api/rooms/${room._id}/chat`, {
         method: "POST",
         headers: {
@@ -361,6 +361,8 @@ export default function VideoPlayer({ room, isHost, onRoomUpdate }) {
       }
     } catch (error) {
       console.error("Error sending message:", error);
+    } finally {
+      setSending(false);
     }
   };
 
@@ -385,6 +387,18 @@ export default function VideoPlayer({ room, isHost, onRoomUpdate }) {
       const data = await response.json();
       if (data.success) {
         setShowReactions(false);
+        // Locally fade out the reaction chips after 2 seconds
+        setTimeout(() => {
+          setReactions((prev) => {
+            const next = { ...prev };
+            Object.keys(next).forEach((k) => {
+              if (Array.isArray(next[k]) && next[k].length > 0) {
+                next[k] = next[k].slice(-2); // keep last 2 only
+              }
+            });
+            return next;
+          });
+        }, 2000);
       }
     } catch (error) {
       console.error("Error adding reaction:", error);
@@ -460,6 +474,12 @@ export default function VideoPlayer({ room, isHost, onRoomUpdate }) {
             className="w-full h-full object-contain"
             onLoadStart={() => setIsLoading(true)}
             onCanPlay={() => setIsLoading(false)}
+            onError={() => {
+              setIsLoading(false);
+              setVideoError(
+                "We couldn't load the video from the provided URL."
+              );
+            }}
             onPlay={() => setIsPlaying(true)}
             onPause={() => setIsPlaying(false)}
             onClick={
@@ -481,6 +501,37 @@ export default function VideoPlayer({ room, isHost, onRoomUpdate }) {
               <div className="text-center">
                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-400 mx-auto mb-4"></div>
                 <p className="text-white">Loading video...</p>
+              </div>
+            </div>
+          )}
+
+          {/* Error Overlay */}
+          {videoError && (
+            <div className="absolute inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-6">
+              <div className="max-w-md w-full text-center">
+                <div className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <FaTimes className="w-6 h-6 text-red-400" />
+                </div>
+                <h2 className="text-xl font-semibold text-white mb-2">
+                  Video failed to load
+                </h2>
+                <p className="text-gray-300 mb-6">{videoError}</p>
+                <div className="flex items-center justify-center gap-3">
+                  <a
+                    href="/"
+                    className="bg-purple-600 hover:bg-purple-700 text-white px-5 py-2 rounded-lg transition-colors"
+                  >
+                    Back to Lobby
+                  </a>
+                  {isHost && (
+                    <button
+                      onClick={handleCancelStream}
+                      className="bg-red-600 hover:bg-red-700 text-white px-5 py-2 rounded-lg transition-colors"
+                    >
+                      End Stream
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -760,9 +811,14 @@ export default function VideoPlayer({ room, isHost, onRoomUpdate }) {
                 />
                 <button
                   onClick={sendMessage}
-                  className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-2 rounded-lg transition-colors duration-200"
+                  disabled={sending}
+                  className={`bg-purple-600 text-white px-6 py-2 rounded-lg transition-colors duration-200 ${
+                    sending
+                      ? "opacity-60 cursor-not-allowed"
+                      : "hover:bg-purple-700"
+                  }`}
                 >
-                  Send
+                  {sending ? "Sending..." : "Send"}
                 </button>
               </div>
             </div>
